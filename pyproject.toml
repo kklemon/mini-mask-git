@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "mini-mask-git"
+version = "0.1.0"
+description = ""
+authors = ["Kristian Klemon <kristian.klemon@gmail.com>"]
+readme = "README.md"
+packages = [{include = "mini_mask_git"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pillow = "^9.4.0"
+torchvision = "^0.14.1"
+omegaconf = "^2.3.0"
+matplotlib = "^3.6.3"
+taming-transformers = {git = "https://github.com/illeatmyhat/taming-transformers"}
+pytorch-lightning = "^1.9.0"
+einops = "^0.6.0"
+lmdb = "^1.4.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
