@@ -1,0 +1,8 @@
+model:
+  encoder:
+    class_path: mini_mask_git.modules.UNetSequenceEncoder
+    init_args:
+      embed_dim: 128
+      base_channel: 128
+      max_channel: 512
+      depth: 4

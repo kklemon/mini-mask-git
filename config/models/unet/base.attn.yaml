@@ -1,0 +1,10 @@
+model:
+  encoder:
+    class_path: mini_mask_git.modules.UNetSequenceEncoder
+    init_args:
+      embed_dim: 256
+      base_channel: 256
+      max_channel: 1024
+      depth: 4
+      attn_indices: -1
+      batch_norm: false

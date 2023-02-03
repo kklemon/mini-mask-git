@@ -1,0 +1,11 @@
+model:
+  encoder:
+    class_path: mini_mask_git.modules.TransformerSequenceEncoder
+    init_args:
+      embed_dim: 256
+      dim_model: 256
+      num_layers: 12
+      nhead: 4
+      dim_feedforward: 1024
+      activation: gelu
+      max_len: 1024
