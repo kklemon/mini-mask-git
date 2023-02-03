@@ -1,0 +1,7 @@
+data:
+  root: data/
+  batch_size: 128
+  num_embeds: 1024
+  spatial_size:
+    - 16
+    - 16

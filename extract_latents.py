@@ -1,5 +1,9 @@
 import argparse
 import pickle
+from multiprocessing import Pool
+import multiprocessing as mp
+from multiprocessing.pool import ThreadPool
+
 import yaml
 import lmdb
 import torch
@@ -11,32 +15,12 @@ from pathlib import Path
 from functools import partial
 from omegaconf import OmegaConf
 from taming.models.vqgan import VQModel, GumbelVQ
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
-from mini_mask_gpt.data import ImageFolderDataset
+from mini_mask_git.data import ImageFolderDataset
+from mini_mask_git.vqgan import load_vqgan_config, load_vqgan, preprocess_vqgan
 
-
-def load_config(config_path, display=False):
-    config = OmegaConf.load(config_path)
-    if display:
-        print(yaml.dump(OmegaConf.to_container(config)))
-    return config
-
-
-def load_vqgan(config, ckpt_path=None, is_gumbel=False):
-    if is_gumbel:
-        model = GumbelVQ(**config.model.params)
-    else:
-      model = VQModel(**config.model.params)
-    if ckpt_path is not None:
-        sd = torch.load(ckpt_path, map_location="cpu")["state_dict"]
-        missing, unexpected = model.load_state_dict(sd, strict=False)
-    return model.eval()
-
-
-def preprocess_vqgan(x):
-    x = 2.0 * x - 1.
-    return x
+mp.log_to_stderr()
 
 
 def preprocess(img, target_image_size=256):
@@ -58,17 +42,38 @@ def encode(x, model):
     return indices
 
 
+def check(idx, dataset):
+    try:
+        dataset[idx]
+    except KeyboardInterrupt:
+        raise
+    except:
+        filename = dataset.files[idx]
+        print(f'Removing {filename}')
+        Path(filename).unlink()
+
+
 @torch.no_grad()
 def main(args):
-    config = load_config(args.config_path, display=False)
+    config = load_vqgan_config(args.config_path, display=False)
     model = load_vqgan(config, ckpt_path=args.ckpt_path).to(args.device)
     model.eval()
     model.quantize.sane_index_shape = True
 
     dataset = ImageFolderDataset(
         root=args.data_root,
-        transform=partial(preprocess, target_image_size=args.image_size)
+        transform=partial(preprocess, target_image_size=args.image_size),
+        return_filename=False
     )
+
+    if args.max_samples:
+        dataset = Subset(dataset, list(range(min(len(dataset), args.max_samples))))
+
+    # with ThreadPool(32) as pool:
+    #     for res in pool.imap(partial(check, dataset=dataset), tqdm(range(len(dataset))), chunksize=1000):
+    #         pass
+    #
+    # return
 
     batches = DataLoader(
         dataset,
@@ -104,9 +109,10 @@ if __name__ == '__main__':
     parser.add_argument('--save_path', required=True)
     parser.add_argument('--image_size', type=int, default=256)
     parser.add_argument('--batch_size', type=int, default=64)
-    parser.add_argument('--num_workers', type=int, default=8)
+    parser.add_argument('--num_workers', type=int, default=32)
     parser.add_argument('--lmdb_map_size', type=int, default=256 * 2 ** 30)
     parser.add_argument('--fp16', action='store_true')
     parser.add_argument('--device', default='cuda')
+    parser.add_argument('--max_samples', type=int)
 
     main(parser.parse_args())

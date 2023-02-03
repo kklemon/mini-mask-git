@@ -1,0 +1,28 @@
+trainer:
+  max_steps: 1_000_000
+  fast_dev_run: false
+  logger:
+    - class_path: WandbLogger
+      init_args:
+        project: mini-mask-git
+        dir: wandb/
+  callbacks:
+    - class_path: LearningRateMonitor
+      init_args:
+        logging_interval: step
+#    - class_path: mini_mask_git.lightning.callbacks.DecodingCallback
+#      init_args:
+#        decoder_config_path: models/vqgan_imagenet_f16_1024/config.yaml
+#        decoder_ckpt_path: models/vqgan_imagenet_f16_1024/model.ckpt
+#    - class_path: pytorch_lightning.callbacks.early_stopping.EarlyStopping
+#      init_args:
+#        monitor: valid/loss
+#        mode: min
+#        patience: 3
+#        verbose: true
+#    - class_path: ModelCheckpoint
+#      init_args:
+#        save_top_k: 3
+#        monitor: valid/loss
+#        mode: min
+#        verbose: true

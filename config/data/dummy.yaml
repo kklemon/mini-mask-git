@@ -1,0 +1,8 @@
+data:
+  root: data/
+  batch_size: 4
+  num_embeds: 16384
+  dummy: true
+  spatial_size:
+    - 16
+    - 16
