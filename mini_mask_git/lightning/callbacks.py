@@ -1,12 +1,11 @@
-from typing import Any
-
-import pylab as pl
 import wandb
+import pytorch_lightning as pl
+
+from typing import Any
 from einops import rearrange
 from pytorch_lightning import Callback
 from pytorch_lightning.cli import SaveConfigCallback
 from torchvision.utils import make_grid
-
 from mini_mask_git.vqgan import load_vqgan_config, load_vqgan, postprocess_vqgan
 
 
