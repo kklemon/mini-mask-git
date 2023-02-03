@@ -2,7 +2,6 @@ import yaml
 import torch
 
 from omegaconf import OmegaConf
-from taming.models.vqgan import VQModel, GumbelVQ
 
 
 def load_vqgan_config(config_path, display=False):
@@ -13,6 +12,11 @@ def load_vqgan_config(config_path, display=False):
 
 
 def load_vqgan(config, ckpt_path=None, is_gumbel=False):
+    try:
+        from taming.models.vqgan import VQModel, GumbelVQ
+    except ImportError:
+        raise ImportError('Install taming-transformers library to support loading VQGAN models.')
+
     if is_gumbel:
         model = GumbelVQ(**config.model.params)
     else:
