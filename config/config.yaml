@@ -10,10 +10,12 @@ trainer:
     - class_path: LearningRateMonitor
       init_args:
         logging_interval: step
-    - class_path: mini_mask_git.lightning.callbacks.DecodingCallback
+    - class_path: mini_mask_git.lightning.callbacks.SampleCallback
       init_args:
-        decoder_config_path: models/vqgan_imagenet_f16_1024/config.yaml
-        decoder_ckpt_path: models/vqgan_imagenet_f16_1024/model.ckpt
+        decoder_config_path: models/vq_f8/config.yaml
+        decoder_ckpt_path: models/vq_f8/model.ckpt
+#        decoder_config_path: models/vqgan_imagenet_f16_1024/config.yaml
+#        decoder_ckpt_path: models/vqgan_imagenet_f16_1024/model.ckpt
 #    - class_path: pytorch_lightning.callbacks.early_stopping.EarlyStopping
 #      init_args:
 #        monitor: valid/loss

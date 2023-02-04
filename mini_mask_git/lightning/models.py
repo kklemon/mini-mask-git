@@ -46,7 +46,7 @@ class LitMaskGIT(pl.LightningModule):
         opt = torch.optim.Adam(
             self.encoder.parameters(),
             lr=self.lr,
-            betas=(0.9, 0.6)
+            betas=(0.9, 0.999)
         )
 
         scheduler = CosineWithWarmupLR(
@@ -61,7 +61,7 @@ class LitMaskGIT(pl.LightningModule):
         )
 
     @property
-    def mask_idx(self):
+    def num_embeds(self):
         return self.trainer.datamodule.num_embeds
 
     @property
@@ -81,34 +81,17 @@ class LitMaskGIT(pl.LightningModule):
 
         mask_fracs = self.scheduling_fn(torch.rand(len(tokens), device=self.device))
 
-        assert 0.0 <= mask_fracs.min() and mask_fracs.max() <= 1.0
-        assert self.mask_idx > tokens.max()
-
         mask_num = torch.ceil(mask_fracs * self.num_tokens)
         mask = utils.generate_random_mask(tokens, mask_num)
 
-        masked_tokens = mask * self.mask_idx + (~mask) * tokens
+        samples = self.sample_tokens(tokens)
+        corrupted_tokens = mask * samples + (~mask) * tokens
 
-        logits = self.encoder(masked_tokens)
+        labels = (tokens == corrupted_tokens).float()
 
-        # loss = F.cross_entropy(
-        #     logits.reshape(-1, logits.shape[-1]),
-        #     tokens.view(-1),
-        #     label_smoothing=0.1
-        # )
+        logits = self.encoder(corrupted_tokens)
 
-        # loss_per_token = (-F.log_softmax(logits, -1) * F.one_hot(tokens, num_classes=self.mask_idx)).sum(-1)
-
-        loss_per_token = F.cross_entropy(
-            logits.reshape(-1, logits.shape[-1]),
-            tokens.view(-1),
-            reduction='none',
-            label_smoothing=0.1
-        ).view(tokens.shape)
-
-        loss_per_token[~mask] = 0
-        loss_per_sample = loss_per_token.sum((1, 2)) / mask.sum((1, 2))
-        loss = loss_per_sample.mean()
+        loss = F.binary_cross_entropy_with_logits(logits, labels)
 
         self.log(f'{log_prefix}/loss', loss, prog_bar=True, sync_dist=True)
 
@@ -120,39 +103,43 @@ class LitMaskGIT(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         return self.step(batch, log_prefix='valid')
 
+    def sample_tokens(self, batch):
+        return torch.multinomial(
+            self.trainer.datamodule.counts, batch.numel(), replacement=True
+        ).to(batch.device).view(batch.shape)
+
     @torch.no_grad()
-    def sample(self, num_samples, num_steps=10, temperature=1.0, return_intermediate=False):
+    def sample(self, num_samples, num_steps=10, return_intermediate=False):
         # Start with an entirely masked grid
-        batch = torch.full((num_samples, *self.spatial_size), self.mask_idx, dtype=torch.long, device=self.device)
+        batch = torch.empty(
+            size=(num_samples, *self.spatial_size),
+            dtype=torch.long,
+            device=self.device
+        )
+        batch = self.sample_tokens(batch)
+
+        batch_mask = torch.zeros_like(batch, dtype=bool)
+
         num_tokens = np.prod(batch.shape[1:])
 
         intermediate = []
 
-        mask_nums = torch.ceil(self.scheduling_fn((torch.arange(num_steps) + 1) / num_steps) * num_tokens).long()
+        mask_nums = torch.floor(self.scheduling_fn((torch.arange(num_steps) + 1) / num_steps) * num_tokens).long()
 
         for num_mask in mask_nums:
-            logits = self.encoder(batch) / temperature
-            probas = logits.softmax(-1)
-            samples = probas.view(-1, probas.shape[-1]).multinomial(num_samples=1).view(batch.shape)
+            samples = self.sample_tokens(batch)
 
-            confidence = torch.take_along_dim(probas, samples.unsqueeze(-1), dim=-1).squeeze(-1)
-            confidence[batch != self.mask_idx] = 1.0
-
+            confidence = self.encoder(batch).sigmoid()
+            confidence[batch_mask] = 1.0
             min_confidence = confidence.view(num_samples, -1).sort(-1)[0][:, num_mask]
 
-            mask = (confidence >= min_confidence[:, None, None]) & (batch == self.mask_idx)
-
-            assert not (mask & (batch != self.mask_idx)).any()
+            mask = confidence < min_confidence[:, None, None]
 
             batch[mask] = samples[mask]
+            batch_mask[~mask] = 1
 
             if return_intermediate:
-                mask = batch == self.mask_idx
-
-                inter_batch = batch.clone()
-                inter_batch[mask] = samples[mask]
-
-                intermediate.append(inter_batch)
+                intermediate.append(batch.clone())
 
         if return_intermediate:
             return torch.stack(intermediate)

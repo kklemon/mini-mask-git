@@ -21,7 +21,7 @@ class TransformerSequenceEncoder(nn.Module):
 
         self.embedding_dim = dim_model
 
-        self.tok_embeds = nn.Embedding(vocab_size + 1, embed_dim)
+        self.tok_embeds = nn.Embedding(vocab_size, embed_dim)
         self.pos_embeds = nn.Embedding(max_len, embed_dim)
 
         self.to_input = nn.Linear(embed_dim, dim_model)
@@ -36,7 +36,7 @@ class TransformerSequenceEncoder(nn.Module):
             enable_nested_tensor=False
         )
 
-        self.to_logits = nn.Linear(dim_model, vocab_size, bias=False)
+        self.to_logits = nn.Linear(dim_model, 1, bias=False)
 
     def forward(self, x, mask=None):
         b, *spatial_dims = x.shape
@@ -50,7 +50,7 @@ class TransformerSequenceEncoder(nn.Module):
 
         x = x.view(b, *spatial_dims, -1)
 
-        return x
+        return x.squeeze()
 
 
 class ResBlock(nn.Module):
