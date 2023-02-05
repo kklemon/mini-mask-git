@@ -52,8 +52,11 @@ class LitLatentImageDatamodule(pl.LightningDataModule):
         )
 
     def setup(self, stage: Optional[str] = None):
-        self.counts = torch.tensor(np.load(str(self.root / self.counts_file)))
-        self.counts /= self.counts.sum()
+        if not self.counts_file:
+            self.counts = torch.ones(self.num_embeds) / self.num_embeds
+        else:
+            self.counts = torch.tensor(np.load(str(self.root / self.counts_file)))
+            self.counts /= self.counts.sum()
 
         self.train_data = self.load_dataset(self.root / self.train_file, mask=True)
         self.val_data = self.load_dataset(self.root / self.val_file, mask=True)

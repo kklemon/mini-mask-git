@@ -21,7 +21,12 @@ class LogConfigCallback(SaveConfigCallback):
 
 
 class SampleCallback(Callback):
-    def __init__(self, decoder_config_path, decoder_ckpt_path, num_samples=8, decode_batch_size: int = 1):
+    def __init__(self,
+                 decoder_config_path,
+                 decoder_ckpt_path,
+                 num_samples=8,
+                 decode_batch_size: int = 1,
+                 inverse_sampling: bool = False):
         config = load_vqgan_config(decoder_config_path, display=False)
         self.model = load_vqgan(config, ckpt_path=decoder_ckpt_path)
         self.model.eval()
@@ -30,10 +35,10 @@ class SampleCallback(Callback):
 
         self.num_samples = num_samples
         self.decode_batch_size = decode_batch_size
+        self.inverse_sampling = inverse_sampling
 
     def on_fit_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self.model = self.model.to(pl_module.device)
-
 
     def decode(self, codes):
         res = self.model.decode_code(codes)
@@ -44,7 +49,7 @@ class SampleCallback(Callback):
     def on_validation_batch_start(
         self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", batch: Any, batch_idx: int, dataloader_idx: int
     ) -> None:
-        if batch_idx != 0:
+        if batch_idx != 0 or not trainer.is_global_zero:
             return
 
         log_dict = {}
@@ -54,7 +59,8 @@ class SampleCallback(Callback):
                 samples = pl_module.sample(
                     num_samples=self.num_samples,
                     num_steps=num_steps,
-                    return_intermediate=True
+                    return_intermediate=True,
+                    inverse_sampling=self.inverse_sampling
                 )
                 samples = rearrange(samples, 'n b ... -> (n b) ...')
 
@@ -66,7 +72,12 @@ class SampleCallback(Callback):
 
             grid = make_grid(decoded, nrow=self.num_samples, normalize=True, scale_each=True)
 
-            log_dict[f'valid/samples/num_steps_{num_steps}'] = wandb.Image(grid)
+            if self.inverse_sampling:
+                key = f'valid/samples/inverse/num_steps_{num_steps}'
+            else:
+                key = f'valid/samples/num_steps_{num_steps}'
+
+            log_dict[key] = wandb.Image(grid)
 
         # tokens, _ = batch
         # tokens = tokens.long()[:32]

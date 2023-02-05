@@ -80,7 +80,6 @@ class LitMaskGIT(pl.LightningModule):
         tokens = tokens.long()
 
         mask_fracs = self.scheduling_fn(torch.rand(len(tokens), device=self.device))
-
         mask_num = torch.ceil(mask_fracs * self.num_tokens)
         mask = utils.generate_random_mask(tokens, mask_num)
 
@@ -109,15 +108,13 @@ class LitMaskGIT(pl.LightningModule):
         ).to(batch.device).view(batch.shape)
 
     @torch.no_grad()
-    def sample(self, num_samples, num_steps=10, return_intermediate=False):
+    def sample(self, num_samples, num_steps=10, return_intermediate=False, inverse_sampling=False):
         # Start with an entirely masked grid
-        batch = torch.empty(
+        batch = self.sample_tokens(torch.empty(
             size=(num_samples, *self.spatial_size),
             dtype=torch.long,
             device=self.device
-        )
-        batch = self.sample_tokens(batch)
-
+        ))
         batch_mask = torch.zeros_like(batch, dtype=bool)
 
         num_tokens = np.prod(batch.shape[1:])
@@ -130,13 +127,18 @@ class LitMaskGIT(pl.LightningModule):
             samples = self.sample_tokens(batch)
 
             confidence = self.encoder(batch).sigmoid()
-            confidence[batch_mask] = 1.0
-            min_confidence = confidence.view(num_samples, -1).sort(-1)[0][:, num_mask]
 
-            mask = confidence < min_confidence[:, None, None]
+            if inverse_sampling:
+                _, indices = confidence.reshape(num_samples, -1).topk(num_mask, largest=False, dim=-1)
+                batch.view(num_samples, -1).scatter_(1, indices, samples.view(num_samples, -1))
+            else:
+                confidence[batch_mask] = 1.0
+                min_confidence = confidence.view(num_samples, -1).sort(-1)[0][:, num_mask]
 
-            batch[mask] = samples[mask]
-            batch_mask[~mask] = 1
+                mask = confidence < min_confidence[:, None, None]
+
+                batch[mask] = samples[mask]
+                batch_mask[~mask] = 1
 
             if return_intermediate:
                 intermediate.append(batch.clone())

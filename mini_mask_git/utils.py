@@ -72,7 +72,7 @@ scheduling_functions = {
     'exponential': lambda x: 1 - (torch.exp(6 * x) - 1) / (np.exp(6) - 1),
     'cubic': lambda x: 1 - x ** 3,
     'square': lambda x: 1 - x ** 2,
-    'cosine': lambda x: torch.cos(x * torch.pi * 0.5),
+    'cosine': lambda x: torch.clamp(torch.cos(x * torch.pi * 0.5), 0.0, 1.0),
     'linear': lambda x: 1 - x,
     'square_root': lambda x: 1 - x ** 0.5,
 }
