@@ -43,11 +43,7 @@ class LitMaskGIT(pl.LightningModule):
         # params = self.encoder.named_parameters()
         # param_groups = get_params_without_weight_decay_ln(params, weight_decay=self.weight_decay)
 
-        opt = torch.optim.Adam(
-            self.encoder.parameters(),
-            lr=self.lr,
-            betas=(0.9, 0.999)
-        )
+        opt = torch.optim.AdamW(self.encoder.parameters(), lr=self.lr)
 
         scheduler = CosineWithWarmupLR(
             opt,
