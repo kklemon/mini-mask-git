@@ -2,7 +2,7 @@ model:
   encoder:
     class_path: mini_mask_git.modules.MaskGIT
     init_args:
-      dim: 512
-      depth: 12
+      dim: 768
+      depth: 24
       heads: 8
       max_len: 1024

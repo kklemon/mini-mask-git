@@ -1,16 +1,11 @@
 trainer:
   max_steps: 1_000_000
   fast_dev_run: false
-  logger:
-    - class_path: WandbLogger
-      init_args:
-        project: mini-mask-git
-        dir: wandb/
   callbacks:
     - class_path: LearningRateMonitor
       init_args:
         logging_interval: step
-    - class_path: mini_mask_git.lightning.callbacks.DecodingCallback
+    - class_path: mini_mask_git.lightning.callbacks.SamplingCallback
       init_args:
         decoder_config_path: models/vqgan_imagenet_f16_1024/config.yaml
         decoder_ckpt_path: models/vqgan_imagenet_f16_1024/model.ckpt

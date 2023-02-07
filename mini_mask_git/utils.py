@@ -72,7 +72,7 @@ scheduling_functions = {
     'exponential': lambda x: 1 - (torch.exp(6 * x) - 1) / (np.exp(6) - 1),
     'cubic': lambda x: 1 - x ** 3,
     'square': lambda x: 1 - x ** 2,
-    'cosine': lambda x: torch.cos(x * torch.pi * 0.5),
+    'cosine': lambda x: torch.clamp(torch.cos(x * torch.pi * 0.5), 0.0, 1.0),
     'linear': lambda x: 1 - x,
     'square_root': lambda x: 1 - x ** 0.5,
 }
@@ -98,3 +98,8 @@ def generate_random_mask(x, num_mask_per_sample):
     mask = mask.take_along_dim(perm_inv, -1)
 
     return mask.view(x.shape)
+
+
+def weights_init(m):
+    if isinstance(m, (nn.Linear, nn.Embedding)):
+        nn.init.normal_(m.weight.data, std=0.02)

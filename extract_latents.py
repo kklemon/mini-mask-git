@@ -1,10 +1,5 @@
 import argparse
 import pickle
-from multiprocessing import Pool
-import multiprocessing as mp
-from multiprocessing.pool import ThreadPool
-
-import yaml
 import lmdb
 import torch
 import numpy as np
@@ -13,21 +8,14 @@ import torchvision.transforms.functional as TF
 
 from pathlib import Path
 from functools import partial
-from omegaconf import OmegaConf
-from taming.models.vqgan import VQModel, GumbelVQ
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 from mini_mask_git.data import ImageFolderDataset
 from mini_mask_git.vqgan import load_vqgan_config, load_vqgan, preprocess_vqgan
 
-mp.log_to_stderr()
-
 
 def preprocess(img, target_image_size=256):
     s = min(img.size)
-
-    # if s < target_image_size:
-    #     raise ValueError(f'min dim for image {s} < {target_image_size}')
 
     r = target_image_size / s
     s = [round(r * img.size[1]), round(r * img.size[0])]
@@ -40,17 +28,6 @@ def preprocess(img, target_image_size=256):
 def encode(x, model):
     _, _, (_, _, indices) = model.encode(x)
     return indices
-
-
-def check(idx, dataset):
-    try:
-        dataset[idx]
-    except KeyboardInterrupt:
-        raise
-    except:
-        filename = dataset.files[idx]
-        print(f'Removing {filename}')
-        Path(filename).unlink()
 
 
 @torch.no_grad()
@@ -68,12 +45,6 @@ def main(args):
 
     if args.max_samples:
         dataset = Subset(dataset, list(range(min(len(dataset), args.max_samples))))
-
-    # with ThreadPool(32) as pool:
-    #     for res in pool.imap(partial(check, dataset=dataset), tqdm(range(len(dataset))), chunksize=1000):
-    #         pass
-    #
-    # return
 
     batches = DataLoader(
         dataset,

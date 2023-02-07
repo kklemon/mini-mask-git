@@ -1,5 +1,5 @@
 data:
   root: data/
-  batch_size: 512
+  batch_size: 256
   num_embeds: 1024
   spatial_size: [8, 8]

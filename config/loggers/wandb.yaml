@@ -1,0 +1,6 @@
+trainer:
+  logger:
+    - class_path: WandbLogger
+      init_args:
+        project: mini-mask-git
+        dir: wandb/
