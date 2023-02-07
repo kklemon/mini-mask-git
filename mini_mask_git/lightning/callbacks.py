@@ -1,16 +1,12 @@
-import math
-
 import wandb
-import torch
 import pytorch_lightning as pl
 
+from itertools import product
 from typing import Any
 from einops import rearrange
 from pytorch_lightning import Callback
 from pytorch_lightning.cli import SaveConfigCallback
 from torchvision.utils import make_grid
-
-from mini_mask_git import utils
 from mini_mask_git.vqgan import load_vqgan_config, load_vqgan, postprocess_vqgan
 
 
@@ -20,36 +16,95 @@ class LogConfigCallback(SaveConfigCallback):
             logger.log_hyperparams(self.config)
 
 
-class SampleCallback(Callback):
-    def __init__(self,
-                 decoder_config_path,
-                 decoder_ckpt_path,
-                 num_samples=8,
-                 decode_batch_size: int = 1,
-                 inverse_sampling: bool = False):
+class MaskGITSamplingCallback(Callback):
+    DEFAULT_TEMPERATURES = [1.0, 2.0, 4.5]
+    DEFAULT_DECODING_STEPS = [4, 8, 12, 16]
+
+    def __init__(self, decoder_config_path, decoder_ckpt_path, num_samples=8):
         config = load_vqgan_config(decoder_config_path, display=False)
+
         self.model = load_vqgan(config, ckpt_path=decoder_ckpt_path)
         self.model.eval()
 
         self.model.quantize.embed_code = lambda x: self.model.quantize.embedding(x).permute(0, 3, 1, 2)
 
         self.num_samples = num_samples
-        self.decode_batch_size = decode_batch_size
-        self.inverse_sampling = inverse_sampling
+        self.first_call = True
 
     def on_fit_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self.model = self.model.to(pl_module.device)
 
-    def decode(self, codes):
-        res = self.model.decode_code(codes)
-        res = postprocess_vqgan(res).cpu()
-        return res
+    def log_samples(self, module):
+        log_dict = {}
 
-    @torch.no_grad()
+        for temperature, sample_steps in product(self.DEFAULT_TEMPERATURES, self.DEFAULT_DECODING_STEPS):
+            samples = module.encoder.sample(
+                size=module.spatial_size,
+                num_samples=self.num_samples,
+                num_steps=sample_steps,
+                scheduling_fn=module.scheduling_fn,
+                temperature=temperature,
+                return_intermediates=True
+            )
+
+            samples = rearrange(samples, 'n b ... -> (n b) ...')
+
+            decoded = self.model.decode_code(samples)
+            decoded = postprocess_vqgan(decoded).cpu()
+
+            grid = make_grid(decoded, nrow=self.num_samples, normalize=True, scale_each=True)
+
+            log_dict[f'valid/samples/temperature_{temperature}'] = wandb.Image(grid)
+
+        return log_dict
+
+    def log_reconstructions(self, batch):
+        tokens, _ = batch
+        tokens = tokens[:16]
+
+        decoded = self.model.decode_code(tokens)
+        decoded = postprocess_vqgan(decoded).cpu()
+
+        grid = make_grid(decoded, nrow=4, normalize=True, scale_each=True)
+
+        return {
+            f'valid/reconstructions': wandb.Image(grid)
+        }
+
     def on_validation_batch_start(
         self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", batch: Any, batch_idx: int, dataloader_idx: int
     ) -> None:
-        if batch_idx != 0 or not trainer.is_global_zero:
+        if batch_idx != 0:
+            return
+
+        log_dict = {}
+
+        if self.first_call:
+            log_dict.update(self.log_reconstructions(batch))
+
+        log_dict.update(self.log_samples(pl_module))
+
+        trainer.logger.experiment.log(log_dict)
+
+
+class DiscGITSamplingCallback(Callback):
+    def __init__(self, decoder_config_path, decoder_ckpt_path, num_samples=8):
+        config = load_vqgan_config(decoder_config_path, display=False)
+
+        self.model = load_vqgan(config, ckpt_path=decoder_ckpt_path)
+        self.model.eval()
+
+        self.model.quantize.embed_code = lambda x: self.model.quantize.embedding(x).permute(0, 3, 1, 2)
+
+        self.num_samples = num_samples
+
+    def on_fit_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        self.model = self.model.to(pl_module.device)
+
+    def on_validation_batch_start(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", batch: Any, batch_idx: int, dataloader_idx: int
+    ) -> None:
+        if batch_idx != 0:
             return
 
         log_dict = {}
@@ -72,31 +127,6 @@ class SampleCallback(Callback):
 
             grid = make_grid(decoded, nrow=self.num_samples, normalize=True, scale_each=True)
 
-            if self.inverse_sampling:
-                key = f'valid/samples/inverse/num_steps_{num_steps}'
-            else:
-                key = f'valid/samples/num_steps_{num_steps}'
+            log_dict[f'valid/samples/num_steps_{num_steps}'] = wandb.Image(grid)
 
-            log_dict[key] = wandb.Image(grid)
-
-        # tokens, _ = batch
-        # tokens = tokens.long()[:32]
-        #
-        # mask_fracs = pl_module.scheduling_fn(torch.linspace(0, 1, len(tokens), device=tokens.device))
-        #
-        # mask_num = torch.ceil(mask_fracs * pl_module.num_tokens)
-        # mask = utils.generate_random_mask(tokens, mask_num)
-        #
-        # samples = torch.multinomial(
-        #     trainer.datamodule.counts, tokens.numel(), replacement=True
-        # ).to(tokens.device).view(tokens.shape)
-        # corrupted_tokens = mask * samples + (~mask) * tokens
-        #
-        # decoded = self.decode(torch.cat([corrupted_tokens, tokens[:32]], dim=0))
-        # decoded = rearrange(decoded, '(n b) ... -> (b n) ...', n=2)
-        #
-        # grid = make_grid(decoded, nrow=2, normalize=True, scale_each=True)
-        #
-        # log_dict[f'valid/samples/corrupted'] = wandb.Image(grid)
-
-        trainer.logger.experiment.log(log_dict)
+trainer.logger.experiment.log(log_dict)
