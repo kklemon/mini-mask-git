@@ -14,15 +14,16 @@ from mini_mask_git.utils import get_params_without_weight_decay_ln
 class LitMaskGIT(pl.LightningModule):
     def __init__(self,
                  encoder: nn.Module,
-                 lr: float = 4e-4,
+                 lr: float = 3e-4,
                  weight_decay: float = 1e-2,
                  training_steps: int = 1_000_000,
-                 warmup_steps: int = 3_000,
+                 warmup_steps: int = 10_000,
                  compile_model: bool = False,
                  scheduling_function: str = 'cosine'):
         super().__init__()
 
         self.encoder = encoder
+        self.encoder.apply(utils.weights_init)
 
         if compile_model:
             assert version.parse(torch.__version__).major >= 2, \
@@ -35,14 +36,7 @@ class LitMaskGIT(pl.LightningModule):
         self.warmup_steps = warmup_steps
         self.scheduling_fn = utils.get_scheduling_function(scheduling_function)
 
-        # self.encoder.apply(utils.weights_init)
-
-        print(self.encoder)
-
     def configure_optimizers(self):
-        # params = self.encoder.named_parameters()
-        # param_groups = get_params_without_weight_decay_ln(params, weight_decay=self.weight_decay)
-
         opt = torch.optim.AdamW(self.encoder.parameters(), lr=self.lr)
 
         scheduler = CosineWithWarmupLR(
@@ -75,11 +69,11 @@ class LitMaskGIT(pl.LightningModule):
         tokens, _ = batch
         tokens = tokens.long()
 
-        mask_fracs = self.scheduling_fn(torch.rand(len(tokens), device=self.device))
-        mask_num = torch.ceil(mask_fracs * self.num_tokens)
-        mask = utils.generate_random_mask(tokens, mask_num)
+        corrupt_ratio = self.scheduling_fn(torch.rand(len(tokens), device=self.device))
+        corrupt_num = torch.ceil(corrupt_ratio * self.num_tokens)
+        mask = utils.generate_random_mask(tokens, corrupt_num)
 
-        samples = self.sample_tokens(tokens)
+        samples = self.encoder.sample_tokens(tokens, self.trainer.datamodule.counts)
         corrupted_tokens = mask * samples + (~mask) * tokens
 
         labels = (tokens == corrupted_tokens).float()
@@ -97,49 +91,3 @@ class LitMaskGIT(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         return self.step(batch, log_prefix='valid')
-
-    def sample_tokens(self, batch):
-        return torch.multinomial(
-            self.trainer.datamodule.counts, batch.numel(), replacement=True
-        ).to(batch.device).view(batch.shape)
-
-    @torch.no_grad()
-    def sample(self, num_samples, num_steps=10, return_intermediate=False, inverse_sampling=False):
-        # Start with an entirely masked grid
-        batch = self.sample_tokens(torch.empty(
-            size=(num_samples, *self.spatial_size),
-            dtype=torch.long,
-            device=self.device
-        ))
-        batch_mask = torch.zeros_like(batch, dtype=bool)
-
-        num_tokens = np.prod(batch.shape[1:])
-
-        intermediate = []
-
-        mask_nums = torch.floor(self.scheduling_fn((torch.arange(num_steps) + 1) / num_steps) * num_tokens).long()
-
-        for num_mask in mask_nums:
-            samples = self.sample_tokens(batch)
-
-            confidence = self.encoder(batch).sigmoid()
-
-            if inverse_sampling:
-                _, indices = confidence.reshape(num_samples, -1).topk(num_mask, largest=False, dim=-1)
-                batch.view(num_samples, -1).scatter_(1, indices, samples.view(num_samples, -1))
-            else:
-                confidence[batch_mask] = 1.0
-                min_confidence = confidence.view(num_samples, -1).sort(-1)[0][:, num_mask]
-
-                mask = confidence < min_confidence[:, None, None]
-
-                batch[mask] = samples[mask]
-                batch_mask[~mask] = 1
-
-            if return_intermediate:
-                intermediate.append(batch.clone())
-
-        if return_intermediate:
-            return torch.stack(intermediate)
-
-        return batch

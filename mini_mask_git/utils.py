@@ -98,3 +98,8 @@ def generate_random_mask(x, num_mask_per_sample):
     mask = mask.take_along_dim(perm_inv, -1)
 
     return mask.view(x.shape)
+
+
+def weights_init(m):
+    if isinstance(m, (nn.Linear, nn.Embedding)):
+        nn.init.normal_(m.weight.data, std=0.02)

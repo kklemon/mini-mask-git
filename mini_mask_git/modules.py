@@ -101,6 +101,7 @@ class MaskGIT(nn.Module):
                  **kwargs):
         super().__init__()
 
+        self.dim = dim
         self.vocab_size = vocab_size
         self.mask_idx = vocab_size
 
@@ -110,7 +111,7 @@ class MaskGIT(nn.Module):
         self.register_buffer('positions', torch.arange(max_len)[None, :])
 
         self.encoder = TransformerEncoder(dim=dim, depth=depth, **kwargs)
-        self.to_logits = nn.Linear(dim, 1, bias=False)
+        self.to_logits = nn.Linear(dim, vocab_size, bias=False)
 
     def forward(self, x, mask=None):
         b, *spatial_dims = x.shape
@@ -160,6 +161,55 @@ class MaskGIT(nn.Module):
                 inter_batch[mask] = samples[mask]
 
                 intermediates.append(inter_batch)
+
+        if return_intermediates:
+            return torch.stack(intermediates)
+
+        return batch
+
+
+class DiscGIT(MaskGIT):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tok_embeds = nn.Embedding(self.vocab_size, self.dim)
+        self.to_logits = nn.Linear(self.dim, 1)
+
+    def sample_tokens(self, batch, probas=None):
+        if probas is None:
+            probas = torch.full(1 / self.vocab_size, self.vocab_size)
+
+        return torch.multinomial(
+            probas, batch.numel(), replacement=True
+        ).to(batch).view(batch.shape)
+
+    @torch.no_grad()
+    def sample(self, size, num_samples, scheduling_fn, num_steps=10, sampling_probas=None, return_intermediates=False):
+        if isinstance(size, int):
+            size = (size, size)
+
+        batch = self.sample_tokens(
+            torch.full((num_samples, *size), self.mask_idx, dtype=torch.long).to(self.positions),
+            probas=sampling_probas
+        )
+
+        num_tokens = np.prod(size)
+
+        intermediates = []
+
+        if isinstance(scheduling_fn, int):
+            mask_nums = torch.full(num_steps, scheduling_fn)
+        else:
+            mask_nums = torch.floor(scheduling_fn((torch.arange(num_steps) + 1) / num_steps) * num_tokens).long()
+
+        for num_mask in mask_nums:
+            samples = self.sample_tokens(batch, sampling_probas)
+
+            confidence = self(batch)
+            _, indices = confidence.reshape(num_samples, -1).topk(num_mask, largest=False, dim=-1)
+            batch.view(num_samples, -1).scatter_(1, indices, samples.view(num_samples, -1))
+
+            if return_intermediates:
+                intermediates.append(batch.clone())
 
         if return_intermediates:
             return torch.stack(intermediates)
