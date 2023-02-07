@@ -1,6 +1,6 @@
 model:
   encoder:
-    class_path: mini_mask_git.modules.MaskGIT
+    class_path: mini_mask_git.modules.DiscGIT
     init_args:
       dim: 512
       depth: 12

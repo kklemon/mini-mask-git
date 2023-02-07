@@ -174,9 +174,12 @@ class DiscGIT(MaskGIT):
         self.tok_embeds = nn.Embedding(self.vocab_size, self.dim)
         self.to_logits = nn.Linear(self.dim, 1)
 
+    def forward(self, x, mask=None):
+        return super().forward(x, mask).squeeze()
+
     def sample_tokens(self, batch, probas=None):
         if probas is None:
-            probas = torch.full(1 / self.vocab_size, self.vocab_size)
+            probas = torch.full((self.vocab_size,), 1 / self.vocab_size)
 
         return torch.multinomial(
             probas, batch.numel(), replacement=True
