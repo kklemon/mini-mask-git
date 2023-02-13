@@ -23,7 +23,7 @@ poetry install
 
 **Tokenize dataset**
 
-Download VQGAN checkpoint from [https://github.com/CompVis/taming-transformers)(https://github.com/CompVis/taming-transformers) to `models/<model_name>/`.
+Download VQGAN checkpoint from [https://github.com/CompVis/taming-transformers](https://github.com/CompVis/taming-transformers) to `models/<model_name>/`.
 
 Encode dataset:
 
