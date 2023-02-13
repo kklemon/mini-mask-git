@@ -35,7 +35,7 @@ Encode dataset:
     --save_path=<codes-path>
 ```
 
-`<path-to-images>` must contain a `train`, `val` and `test` folder.
+`<path-to-images>` has to contain a `train`, `val` and `test` folder.
 
 **Run training:**
 
@@ -48,7 +48,7 @@ poetry run python train.py fit \
     --trainer.accelerator=gpu --trainer.devices=1 --trainer.precision=16
 ```
 
-Logging to [W&B](https://wandb.ai/) can be enabled via adding the following line to the training command:
+Logging to [W&B](https://wandb.ai/) can be enabled by adding the following line to the training command:
 
 ```bash
 --config=config/loggers/wandb.yaml
